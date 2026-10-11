@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulación de Cinética de Hexoquinasa y Glucoquinasa</title>
+    <!-- Carga de la librería p5.js para la orquestación de la simulación -->
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.4.0/lib/p5.js"></script>
+    <!-- Carga de la librería Chart.js para la gráfica dinámica -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            background-color: #f0f4f8;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+            color: #333;
+        }
+        #app-container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+            max-width: 950px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+            align-items: center;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2.2em;
+        }
+        p {
+            text-align: center;
+            font-size: 1.1em;
+            line-height: 1.6;
+            color: #555;
+        }
+        .controls-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            width: 100%;
+            max-width: 600px;
+            padding: 15px;
+            background-color: #e8f0f7;
+            border-radius: 10px;
+            box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.05);
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        label {
+            font-weight: bold;
+            color: #34495e;
+            font-size: 1em;
+        }
+        input[type="range"] {
+            width: 100%;
+            -webkit-appearance: none;
+            height: 8px;
+            background: #d3d3d3;
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .2s;
+            border-radius: 5px;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #3498db;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+        .chart-container {
+            width: 100%;
+            max-width: 900px;
+            height: 450px;
+            background-color: #ffffff;
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+        }
+        .info-panel {
+            background-color: #ecf0f1;
+            padding: 15px 25px;
+            border-radius: 10px;
+            width: 100%;
+            max-width: 700px;
+            text-align: left;
+            font-size: 0.95em;
+            line-height: 1.5;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+        .info-panel ul {
+            padding-left: 20px;
+        }
+        .velocity-badge {
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .hexo-text { color: #3b82f6; }
+        .gluco-text { color: #ef4444; }
+    </style>
+</head>
+<body>
+    <div id="app-container">
+        <h1>Simulación: Hexoquinasa vs Glucoquinasa</h1>
+        <p>Comparativa de cinética enzimática con valores corregidos de Vmáx y Km.</p>
+
+        <div class="controls-container">
+            <div class="control-group">
+                <label for="glucose-slider">Concentración de Glucosa [S] (mM): <span id="glucose-value">5.0</span></label>
+                <input type="range" id="glucose-slider" min="0" max="30" value="5" step="0.1">
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="enzymeKineticsChart"></canvas>
+        </div>
+
+        <div class="info-panel">
+            <p><strong>Parámetros Enzimáticos Reales:</strong></p>
+            <ul>
+                <li><span class="hexo-text">Hexoquinasa (Músculo):</span> Km = 0.1 mM | Vmax = 0.00527 mM/min</li>
+                <li><span class="gluco-text">Glucoquinasa (Hígado):</span> Km = 10.0 mM | Vmax = 0.79 mM/min</li>
+            </ul>
+            <p><strong>Resultados en Tiempo Real:</strong></p>
+            <ul>
+                <li>Velocidad Hexoquinasa: <span id="v-hexo" class="hexo-text">--</span></li>
+                <li>Velocidad Glucoquinasa: <span id="v-gluco" class="gluco-text">--</span></li>
+            </ul>
+            <p style="font-size: 0.85em; color: #7f8c8d; margin-top: 10px;">
+                *Nota: En la gráfica, la Hexoquinasa usa el eje derecho (azul) para apreciar su saturación rápida.
+            </p>
+        </div>
+    </div>
+
+    <script>
+        let sketch = function(p) {
+            let enzymeChart;
+            let glucoseSlider;
+
+            // --- Constantes Corregidas ---
+            const KM_HEXO = 0.1;
+            const VMAX_HEXO = 0.00527;
+            const KM_GLUCO = 10.0;
+            const VMAX_GLUCO = 0.79;
+
+            let labelsX = [];
+
+            p.setup = function() {
+                p.noCanvas();
+                glucoseSlider = p.select('#glucose-slider');
+                
+                for (let s = 0; s <= 30; s += 0.2) {
+                    labelsX.push(s.toFixed(1));
+                }
+
+                const ctx = document.getElementById('enzymeKineticsChart').getContext('2d');
+                enzymeChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labelsX,
+                        datasets: [
+                            {
+                                label: 'Glucoquinasa (Baja afinidad)',
+                                borderColor: '#ef4444',
+                                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                data: [],
+                                fill: true,
+                                yAxisID: 'y'
+                            },
+                            {
+                                label: 'Hexoquinasa (Alta afinidad)',
+                                borderColor: '#3b82f6',
+                                data: [],
+                                fill: false,
+                                yAxisID: 'yHexo'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                type: 'linear',
+                                min: 0,
+                                max: 30,
+                                title: { display: true, text: 'Glucosa (mM)' }
+                            },
+                            y: {
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                title: { display: true, text: 'v Glucoquinasa (mM/min)', color: '#ef4444' },
+                                min: 0,
+                                max: 0.9
+                            },
+                            yHexo: {
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                title: { display: true, text: 'v Hexoquinasa (mM/min)', color: '#3b82f6' },
+                                min: 0,
+                                max: 0.006,
+                                grid: { drawOnChartArea: false }
+                            }
+                        }
+                    }
+                });
+
+                glucoseSlider.input(updateUI);
+                updateUI();
+            };
+
+            function calcV(S, Vmax, Km) {
+                return (Vmax * S) / (Km + S);
+            }
+
+            function updateUI() {
+                let S = parseFloat(glucoseSlider.value());
+                p.select('#glucose-value').html(S.toFixed(1));
+
+                let dataHexo = [];
+                let dataGluco = [];
+
+                for (let i = 0; i < labelsX.length; i++) {
+                    let sVal = parseFloat(labelsX[i]);
+                    if (sVal <= S) {
+                        dataHexo.push(calcV(sVal, VMAX_HEXO, KM_HEXO));
+                        dataGluco.push(calcV(sVal, VMAX_GLUCO, KM_GLUCO));
+                    } else {
+                        dataHexo.push(null);
+                        dataGluco.push(null);
+                    }
+                }
+
+                enzymeChart.data.datasets[0].data = dataGluco;
+                enzymeChart.data.datasets[1].data = dataHexo;
+                enzymeChart.update('none');
+
+                // Mostrar valores actuales
+                let curVHexo = calcV(S, VMAX_HEXO, KM_HEXO);
+                let curVGluco = calcV(S, VMAX_GLUCO, KM_GLUCO);
+
+                p.select('#v-hexo').html(curVHexo.toFixed(5) + " mM/min");
+                p.select('#v-gluco').html(curVGluco.toFixed(4) + " mM/min");
+            }
+        };
+
+        new p5(sketch);
+    </script>
+</body>
+</html>
